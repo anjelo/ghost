@@ -1,5 +1,3 @@
-'use strict';
-
 const fs = require('fs-extra');
 
 module.exports = function zipFolder(folderToZip, destination, callback) {
@@ -20,8 +18,10 @@ module.exports = function zipFolder(folderToZip, destination, callback) {
     archive.on('error', function (err) {
         callback(err, null);
     });
-
-    archive.directory(folderToZip, '/');
+    archive.glob(`**/*`, {
+        cwd: folderToZip,
+        ignore: ['node_modules/**']
+    });
     archive.pipe(output);
     archive.finalize();
 };

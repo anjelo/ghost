@@ -1,3 +1,12 @@
+/* String Column Sizes Information
+ * (From: https://github.com/TryGhost/Ghost/pull/7932)
+ *
+ * Small strings = length 50
+ * Medium strings = length 191
+ * Large strings = length 1000-2000
+ * Text = length 65535 (64 KiB)
+ * Long text = length 1,000,000,000
+ */
 module.exports = {
     posts: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
@@ -6,18 +15,33 @@ module.exports = {
         slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
         mobiledoc: {type: 'text', maxlength: 1000000000, fieldtype: 'long', nullable: true},
         html: {type: 'text', maxlength: 1000000000, fieldtype: 'long', nullable: true},
-        amp: {type: 'text', maxlength: 1000000000, fieldtype: 'long', nullable: true},
+        comment_id: {type: 'string', maxlength: 50, nullable: true},
         plaintext: {type: 'text', maxlength: 1000000000, fieldtype: 'long', nullable: true},
         feature_image: {type: 'string', maxlength: 2000, nullable: true},
         featured: {type: 'bool', nullable: false, defaultTo: false},
         page: {type: 'bool', nullable: false, defaultTo: false},
         status: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'draft'},
         locale: {type: 'string', maxlength: 6, nullable: true},
-        visibility: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'public', validations: {isIn: [['public']]}},
+        visibility: {
+            type: 'string',
+            maxlength: 50,
+            nullable: false,
+            defaultTo: 'public',
+            validations: {isIn: [['public']]}
+        },
         meta_title: {type: 'string', maxlength: 2000, nullable: true, validations: {isLength: {max: 300}}},
         meta_description: {type: 'string', maxlength: 2000, nullable: true, validations: {isLength: {max: 500}}},
+        /**
+         * @deprecated: `author_id`, might be removed in Ghost 3.0
+         * If we keep it, then only, because you can easier query post.author_id than posts_authors[*].sort_order.
+         */
         author_id: {type: 'string', maxlength: 24, nullable: false},
         created_at: {type: 'dateTime', nullable: false},
+        /**
+         * @deprecated: https://github.com/TryGhost/Ghost/issues/10286
+         *
+         * This is valid for all x_by fields.
+         */
         created_by: {type: 'string', maxlength: 24, nullable: false},
         updated_at: {type: 'dateTime', nullable: true},
         updated_by: {type: 'string', maxlength: 24, nullable: true},
@@ -32,7 +56,8 @@ module.exports = {
         twitter_image: {type: 'string', maxlength: 2000, nullable: true},
         twitter_title: {type: 'string', maxlength: 300, nullable: true},
         twitter_description: {type: 'string', maxlength: 500, nullable: true},
-        custom_template: {type: 'string', maxlength: 100, nullable: true}
+        custom_template: {type: 'string', maxlength: 100, nullable: true},
+        canonical_url: {type: 'text', maxlength: 2000, nullable: true}
     },
     users: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
@@ -52,7 +77,13 @@ module.exports = {
         accessibility: {type: 'text', maxlength: 65535, nullable: true},
         status: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'active'},
         locale: {type: 'string', maxlength: 6, nullable: true},
-        visibility: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'public', validations: {isIn: [['public']]}},
+        visibility: {
+            type: 'string',
+            maxlength: 50,
+            nullable: false,
+            defaultTo: 'public',
+            validations: {isIn: [['public']]}
+        },
         meta_title: {type: 'string', maxlength: 2000, nullable: true, validations: {isLength: {max: 300}}},
         meta_description: {type: 'string', maxlength: 2000, nullable: true, validations: {isLength: {max: 500}}},
         tour: {type: 'text', maxlength: 65535, nullable: true},
@@ -61,6 +92,12 @@ module.exports = {
         created_by: {type: 'string', maxlength: 24, nullable: false},
         updated_at: {type: 'dateTime', nullable: true},
         updated_by: {type: 'string', maxlength: 24, nullable: true}
+    },
+    posts_authors: {
+        id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        post_id: {type: 'string', maxlength: 24, nullable: false, references: 'posts.id'},
+        author_id: {type: 'string', maxlength: 24, nullable: false, references: 'users.id'},
+        sort_order: {type: 'integer', nullable: false, unsigned: true, defaultTo: 0}
     },
     roles: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
@@ -106,7 +143,13 @@ module.exports = {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
         key: {type: 'string', maxlength: 50, nullable: false, unique: true},
         value: {type: 'text', maxlength: 65535, nullable: true},
-        type: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'core', validations: {isIn: [['core', 'blog', 'theme', 'app', 'plugin', 'private']]}},
+        type: {
+            type: 'string',
+            maxlength: 50,
+            nullable: false,
+            defaultTo: 'core',
+            validations: {isIn: [['core', 'blog', 'theme', 'app', 'plugin', 'private', 'members']]}
+        },
         created_at: {type: 'dateTime', nullable: false},
         created_by: {type: 'string', maxlength: 24, nullable: false},
         updated_at: {type: 'dateTime', nullable: true},
@@ -119,7 +162,13 @@ module.exports = {
         description: {type: 'text', maxlength: 65535, nullable: true, validations: {isLength: {max: 500}}},
         feature_image: {type: 'string', maxlength: 2000, nullable: true},
         parent_id: {type: 'string', nullable: true},
-        visibility: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'public', validations: {isIn: [['public', 'internal']]}},
+        visibility: {
+            type: 'string',
+            maxlength: 50,
+            nullable: false,
+            defaultTo: 'public',
+            validations: {isIn: [['public', 'internal']]}
+        },
         meta_title: {type: 'string', maxlength: 2000, nullable: true, validations: {isLength: {max: 300}}},
         meta_description: {type: 'string', maxlength: 2000, nullable: true, validations: {isLength: {max: 500}}},
         created_at: {type: 'dateTime', nullable: false},
@@ -179,7 +228,13 @@ module.exports = {
         auth_uri: {type: 'string', maxlength: 2000, nullable: true},
         logo: {type: 'string', maxlength: 2000, nullable: true},
         status: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'development'},
-        type: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'ua', validations: {isIn: [['ua', 'web', 'native']]}},
+        type: {
+            type: 'string',
+            maxlength: 50,
+            nullable: false,
+            defaultTo: 'ua',
+            validations: {isIn: [['ua', 'web', 'native']]}
+        },
         description: {type: 'string', maxlength: 2000, nullable: true},
         created_at: {type: 'dateTime', nullable: false},
         created_by: {type: 'string', maxlength: 24, nullable: false},
@@ -210,7 +265,13 @@ module.exports = {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
         name: {type: 'string', maxlength: 191, nullable: true},
         email: {type: 'string', maxlength: 191, nullable: false, unique: true, validations: {isEmail: true}},
-        status: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'pending', validations: {isIn: [['subscribed', 'pending', 'unsubscribed']]}},
+        status: {
+            type: 'string',
+            maxlength: 50,
+            nullable: false,
+            defaultTo: 'pending',
+            validations: {isIn: [['subscribed', 'pending', 'unsubscribed']]}
+        },
         post_id: {type: 'string', maxlength: 24, nullable: true},
         subscribed_url: {type: 'string', maxlength: 2000, nullable: true, validations: {isEmptyOrURL: true}},
         subscribed_referrer: {type: 'string', maxlength: 2000, nullable: true, validations: {isEmptyOrURL: true}},
@@ -224,7 +285,13 @@ module.exports = {
     invites: {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
         role_id: {type: 'string', maxlength: 24, nullable: false},
-        status: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'pending', validations: {isIn: [['pending', 'sent']]}},
+        status: {
+            type: 'string',
+            maxlength: 50,
+            nullable: false,
+            defaultTo: 'pending',
+            validations: {isIn: [['pending', 'sent']]}
+        },
         token: {type: 'string', maxlength: 191, nullable: false, unique: true},
         email: {type: 'string', maxlength: 191, nullable: false, unique: true, validations: {isEmail: true}},
         expires: {type: 'bigInteger', nullable: false},
@@ -244,9 +311,98 @@ module.exports = {
         id: {type: 'string', maxlength: 24, nullable: false, primary: true},
         event: {type: 'string', maxlength: 50, nullable: false, validations: {isLowercase: true}},
         target_url: {type: 'string', maxlength: 2000, nullable: false},
+        name: {type: 'string', maxlength: 191, nullable: true},
+        secret: {type: 'string', maxlength: 191, nullable: true},
+        api_version: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'v2'},
+        integration_id: {type: 'string', maxlength: 24, nullable: true},
+        status: {type: 'string', maxlength: 50, nullable: false, defaultTo: 'available'},
+        last_triggered_at: {type: 'dateTime', nullable: true},
+        last_triggered_status: {type: 'string', maxlength: 50, nullable: true},
+        last_triggered_error: {type: 'string', maxlength: 50, nullable: true},
         created_at: {type: 'dateTime', nullable: false},
         created_by: {type: 'string', maxlength: 24, nullable: false},
         updated_at: {type: 'dateTime', nullable: true},
         updated_by: {type: 'string', maxlength: 24, nullable: true}
+    },
+    sessions: {
+        id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        session_id: {type: 'string', maxlength: 32, nullable: false, unique: true},
+        user_id: {type: 'string', maxlength: 24, nullable: false},
+        session_data: {type: 'string', maxlength: 2000, nullable: false},
+        created_at: {type: 'dateTime', nullable: false},
+        updated_at: {type: 'dateTime', nullable: true}
+    },
+    integrations: {
+        id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        type: {
+            type: 'string',
+            maxlength: 50,
+            nullable: false,
+            defaultTo: 'custom',
+            validations: {isIn: [['internal', 'builtin', 'custom']]}
+        },
+        name: {type: 'string', maxlength: 191, nullable: false},
+        slug: {type: 'string', maxlength: 191, nullable: false, unique: true},
+        icon_image: {type: 'string', maxlength: 2000, nullable: true},
+        description: {type: 'string', maxlength: 2000, nullable: true},
+        created_at: {type: 'dateTime', nullable: false},
+        created_by: {type: 'string', maxlength: 24, nullable: false},
+        updated_at: {type: 'dateTime', nullable: true},
+        updated_by: {type: 'string', maxlength: 24, nullable: true}
+    },
+    api_keys: {
+        id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        type: {
+            type: 'string',
+            maxlength: 50,
+            nullable: false,
+            validations: {isIn: [['content', 'admin']]}
+        },
+        secret: {
+            type: 'string',
+            maxlength: 191,
+            nullable: false,
+            unique: true,
+            validations: {isLength: {min: 26, max: 128}}
+        },
+        role_id: {type: 'string', maxlength: 24, nullable: true},
+        // integration_id is nullable to allow "internal" API keys that don't show in the UI
+        integration_id: {type: 'string', maxlength: 24, nullable: true},
+        last_seen_at: {type: 'dateTime', nullable: true},
+        last_seen_version: {type: 'string', maxlength: 50, nullable: true},
+        created_at: {type: 'dateTime', nullable: false},
+        created_by: {type: 'string', maxlength: 24, nullable: false},
+        updated_at: {type: 'dateTime', nullable: true},
+        updated_by: {type: 'string', maxlength: 24, nullable: true}
+    },
+    mobiledoc_revisions: {
+        id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        post_id: {type: 'string', maxlength: 24, nullable: false, index: true},
+        mobiledoc: {type: 'text', maxlength: 1000000000, fieldtype: 'long', nullable: true},
+        created_at_ts: {type: 'bigInteger', nullable: false},
+        created_at: {type: 'dateTime', nullable: false}
+    },
+    members: {
+        id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        email: {type: 'string', maxlength: 191, nullable: false, unique: true, validations: {isEmail: true}},
+        name: {type: 'string', maxlength: 191, nullable: false},
+        password: {type: 'string', maxlength: 60, nullable: true},
+        created_at: {type: 'dateTime', nullable: false},
+        created_by: {type: 'string', maxlength: 24, nullable: false},
+        updated_at: {type: 'dateTime', nullable: true},
+        updated_by: {type: 'string', maxlength: 24, nullable: true}
+    },
+    actions: {
+        id: {type: 'string', maxlength: 24, nullable: false, primary: true},
+        resource_id: {type: 'string', maxlength: 24, nullable: true},
+        resource_type: {type: 'string', maxlength: 50, nullable: false},
+        actor_id: {type: 'string', maxlength: 24, nullable: false},
+        actor_type: {type: 'string', maxlength: 50, nullable: false},
+        // @NOTE: The event column contains short buzzwords e.g. subscribed, started, added, deleted, edited etc.
+        //        We already store and require the target resource type. No need to remember e.g. post.edited
+        event: {type: 'string', maxlength: 50, nullable: false},
+        // @NOTE: The context object can be used to store information about an action e.g. diffs, meta
+        context: {type: 'text', maxlength: 1000000000, nullable: true},
+        created_at: {type: 'dateTime', nullable: false}
     }
 };

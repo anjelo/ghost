@@ -1,8 +1,38 @@
-'use strict';
-
 const crypto = require('crypto');
 
-exports.resetToken = {
+module.exports.generateFromContent = function generateFromContent(options) {
+    options = options || {};
+
+    const hash = crypto.createHash('sha256'),
+        content = options.content;
+
+    let text = '';
+
+    hash.update(content);
+
+    text += [content, hash.digest('base64')].join('|');
+    return Buffer.from(text).toString('base64');
+};
+
+module.exports.generateFromEmail = function generateFromEmail(options) {
+    options = options || {};
+
+    const hash = crypto.createHash('sha256'),
+        expires = options.expires,
+        email = options.email,
+        secret = options.secret;
+
+    let text = '';
+
+    hash.update(String(expires));
+    hash.update(email.toLocaleLowerCase());
+    hash.update(String(secret));
+
+    text += [expires, email, hash.digest('base64')].join('|');
+    return Buffer.from(text).toString('base64');
+};
+
+module.exports.resetToken = {
     generateHash: function generateHash(options) {
         options = options || {};
 
@@ -19,13 +49,13 @@ exports.resetToken = {
         hash.update(String(dbHash));
 
         text += [expires, email, hash.digest('base64')].join('|');
-        return new Buffer(text).toString('base64');
+        return Buffer.from(text).toString('base64');
     },
     extract: function extract(options) {
         options = options || {};
 
         var token = options.token,
-            tokenText = new Buffer(token, 'base64').toString('ascii'),
+            tokenText = Buffer.from(token, 'base64').toString('ascii'),
             parts,
             expires,
             email;

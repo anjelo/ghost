@@ -1,27 +1,43 @@
-var Promise = require('bluebird'),
-    ghostBookshelf = require('./base'),
-    common = require('../lib/common'),
-    Webhook,
+const Promise = require('bluebird'),
+    ghostBookshelf = require('./base');
+
+let Webhook,
     Webhooks;
 
 Webhook = ghostBookshelf.Model.extend({
     tableName: 'webhooks',
 
-    emitChange: function emitChange(event, options) {
-        options = options || {};
+    defaults() {
+        return {
+            api_version: 'v2',
+            status: 'available'
+        };
+    },
 
-        common.events.emit('webhook' + '.' + event, this, options);
+    integration() {
+        return this.belongsTo('Integration');
+    },
+
+    emitChange: function emitChange(event, options) {
+        const eventToTrigger = 'webhook' + '.' + event;
+        ghostBookshelf.Model.prototype.emitChange.bind(this)(this, eventToTrigger, options);
     },
 
     onCreated: function onCreated(model, response, options) {
+        ghostBookshelf.Model.prototype.onCreated.apply(this, arguments);
+
         model.emitChange('added', options);
     },
 
     onUpdated: function onUpdated(model, response, options) {
+        ghostBookshelf.Model.prototype.onUpdated.apply(this, arguments);
+
         model.emitChange('edited', options);
     },
 
-    onDestroyed: function onDestroyed(model, response, options) {
+    onDestroyed: function onDestroyed(model, options) {
+        ghostBookshelf.Model.prototype.onDestroyed.apply(this, arguments);
+
         model.emitChange('deleted', options);
     }
 }, {

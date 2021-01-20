@@ -1,9 +1,8 @@
-'use strict';
-
 const debug = require('ghost-ignition').debug('importer:posts'),
     _ = require('lodash'),
     uuid = require('uuid'),
     BaseImporter = require('./base'),
+    converters = require('../../../../lib/mobiledoc/converters'),
     validation = require('../../../validation');
 
 class PostsImporter extends BaseImporter {
@@ -11,14 +10,10 @@ class PostsImporter extends BaseImporter {
         super(allDataFromFile, {
             modelName: 'Post',
             dataKeyToImport: 'posts',
-            requiredFromFile: ['posts', 'tags', 'posts_tags'],
+            requiredFromFile: ['posts', 'tags', 'posts_tags', 'posts_authors'],
             requiredImportedData: ['tags'],
             requiredExistingData: ['tags']
         });
-
-        this.legacyKeys = {
-            image: 'feature_image'
-        };
     }
 
     sanitizeAttributes() {
@@ -30,90 +25,121 @@ class PostsImporter extends BaseImporter {
     }
 
     /**
-     * Naive function to attach related tags.
-     * Target tags should not be created. We add the relation by foreign key.
+     * Naive function to attach related tags and authors.
      */
     addNestedRelations() {
         this.requiredFromFile.posts_tags = _.orderBy(this.requiredFromFile.posts_tags, ['post_id', 'sort_order'], ['asc', 'asc']);
+        this.requiredFromFile.posts_authors = _.orderBy(this.requiredFromFile.posts_authors, ['post_id', 'sort_order'], ['asc', 'asc']);
 
         /**
-         * {post_id: 1, tag_id: 2}
+         * from {post_id: 1, tag_id: 2} to post.tags=[{id:id}]
+         * from {post_id: 1, author_id: 2} post.authors=[{id:id}]
          */
-        _.each(this.requiredFromFile.posts_tags, (postTagRelation) => {
-            if (!postTagRelation.post_id) {
-                return;
-            }
+        const run = (relations, target, fk) => {
+            _.each(relations, (relation) => {
+                if (!relation.post_id) {
+                    return;
+                }
 
-            let postToImport = _.find(this.dataToImport, {id: postTagRelation.post_id});
+                let postToImport = _.find(this.dataToImport, {id: relation.post_id});
 
-            // CASE: we won't import a relation when the target post does not exist
-            if (!postToImport) {
-                return;
-            }
+                // CASE: we won't import a relation when the target post does not exist
+                if (!postToImport) {
+                    return;
+                }
 
-            if (!postToImport.tags || !_.isArray(postToImport.tags)) {
-                postToImport.tags = [];
-            }
+                if (!postToImport[target] || !_.isArray(postToImport[target])) {
+                    postToImport[target] = [];
+                }
 
-            // CASE: duplicate relation?
-            if (!_.find(postToImport.tags, {tag_id: postTagRelation.tag_id})) {
-                postToImport.tags.push({
-                    tag_id: postTagRelation.tag_id
-                });
-            }
-        });
+                // CASE: detect duplicate relations
+                if (!_.find(postToImport[target], {id: relation[fk]})) {
+                    postToImport[target].push({
+                        id: relation[fk]
+                    });
+                }
+            });
+        };
+
+        run(this.requiredFromFile.posts_tags, 'tags', 'tag_id');
+        run(this.requiredFromFile.posts_authors, 'authors', 'author_id');
     }
 
     /**
-     * Replace all `tag_id` references.
+     * Replace all identifier references.
      */
     replaceIdentifiers() {
-        /**
-         * {post_id: 1, tag_id: 2}
-         */
-        _.each(this.dataToImport, (postToImport, postIndex) => {
-            if (!postToImport.tags || !postToImport.tags.length) {
+        const ownerUserId = _.find(this.requiredExistingData.users, (user) => {
+            if (user.roles[0].name === 'Owner') {
+                return true;
+            }
+        }).id;
+
+        const run = (postToImport, postIndex, targetProperty, tableName) => {
+            if (!postToImport[targetProperty] || !postToImport[targetProperty].length) {
                 return;
             }
 
             let indexesToRemove = [];
-            _.each(postToImport.tags, (tag, tagIndex) => {
-                let tagInFile = _.find(this.requiredFromFile.tags, {id: tag.tag_id});
+            _.each(postToImport[targetProperty], (object, index) => {
+                // this is the original relational object (old id)
+                let objectInFile = _.find(this.requiredFromFile[tableName], {id: object.id});
 
-                if (!tagInFile) {
-                    let existingTag = _.find(this.requiredExistingData.tags, {id: tag.tag_id});
+                if (!objectInFile) {
+                    let existingObject = _.find(this.requiredExistingData[tableName], {id: object.id});
 
-                    // CASE: tag is not in file, tag is not in db
-                    if (!existingTag) {
-                        indexesToRemove.push(tagIndex);
+                    // CASE: is not in file, is not in db
+                    if (!existingObject) {
+                        indexesToRemove.push(index);
                         return;
                     } else {
-                        this.dataToImport[postIndex].tags[tagIndex].tag_id = existingTag.id;
+                        this.dataToImport[postIndex][targetProperty][index].id = existingObject.id;
                         return;
                     }
                 }
 
-                // CASE: search through imported data
-                let importedTag = _.find(this.requiredImportedData.tags, {slug: tagInFile.slug});
+                // CASE: search through imported data.
+                // EDGE CASE: uppercase tag slug was imported and auto modified
+                let importedObject = null;
 
-                if (importedTag) {
-                    this.dataToImport[postIndex].tags[tagIndex].tag_id = importedTag.id;
+                if (objectInFile.id) {
+                    importedObject = _.find(this.requiredImportedData[tableName], {originalId: objectInFile.id});
+                }
+
+                if (importedObject) {
+                    this.dataToImport[postIndex][targetProperty][index].id = importedObject.id;
                     return;
                 }
 
-                // CASE: search through existing data
-                let existingTag = _.find(this.requiredExistingData.tags, {slug: tagInFile.slug});
+                // CASE: search through existing data by unique attribute
+                let existingObject = _.find(this.requiredExistingData[tableName], {slug: objectInFile.slug});
 
-                if (existingTag) {
-                    this.dataToImport[postIndex].tags[tagIndex].tag_id = existingTag.id;
+                if (existingObject) {
+                    this.dataToImport[postIndex][targetProperty][index].id = existingObject.id;
                 } else {
-                    indexesToRemove.push(tagIndex);
+                    indexesToRemove.push(index);
                 }
             });
 
-            this.dataToImport[postIndex].tags = _.filter(this.dataToImport[postIndex].tags, ((tag, index) => {
+            this.dataToImport[postIndex][targetProperty] = _.filter(this.dataToImport[postIndex][targetProperty], ((object, index) => {
                 return indexesToRemove.indexOf(index) === -1;
             }));
+
+            // CASE: we had to remove all the relations, because we could not match or find the relation reference.
+            // e.g. you import a post with multiple authors. Only the primary author is assigned.
+            // But the primary author won't be imported and we can't find the author in the existing database.
+            // This would end in `post.authors = []`, which is not allowed. There must be always minimum one author.
+            // We fallback to the owner user.
+            if (targetProperty === 'authors' && !this.dataToImport[postIndex][targetProperty].length) {
+                this.dataToImport[postIndex][targetProperty] = [{
+                    id: ownerUserId
+                }];
+            }
+        };
+
+        _.each(this.dataToImport, (postToImport, postIndex) => {
+            run(postToImport, postIndex, 'tags', 'tags');
+            run(postToImport, postIndex, 'authors', 'users');
         });
 
         return super.replaceIdentifiers();
@@ -121,47 +147,52 @@ class PostsImporter extends BaseImporter {
 
     beforeImport() {
         debug('beforeImport');
-        let mobileDocContent;
 
         this.sanitizeAttributes();
         this.addNestedRelations();
 
-        // Remove legacy field language
-        this.dataToImport = _.filter(this.dataToImport, (data) => {
-            return _.omit(data, 'language');
-        });
-
-        this.dataToImport = this.dataToImport.map(this.legacyMapper);
-
-        // For legacy imports/custom imports with only html we can parse the markdown or html into a mobile doc card
-        // For now we can hardcode the version
         _.each(this.dataToImport, (model) => {
-            if (!model.mobiledoc) {
-                if (model.markdown && model.markdown.length > 0) {
-                    mobileDocContent = model.markdown;
-                } else if (model.html && model.html.length > 0) {
-                    mobileDocContent = model.html;
-                } else {
-                    // Set mobileDocContent to null else it will affect empty posts
-                    mobileDocContent = null;
-                }
-                if (mobileDocContent) {
-                    model.mobiledoc = JSON.stringify({
-                        version: '0.3.1',
-                        markups: [],
-                        atoms: [],
-                        cards: [['card-markdown', {cardName: 'card-markdown', markdown: mobileDocContent}]],
-                        sections: [[10, 0]]
-                    });
+            // NOTE: we remember the original post id for disqus
+            // (see https://github.com/TryGhost/Ghost/issues/8963)
+
+            // CASE 1: you import a 1.0 export (amp field contains the correct disqus id)
+            // CASE 2: you import a 2.0 export (we have to ensure we use the original post id as disqus id)
+            if (model.id && model.amp) {
+                model.comment_id = model.amp;
+                delete model.amp;
+            } else {
+                if (!model.comment_id) {
+                    model.comment_id = model.id;
                 }
             }
 
-            // NOTE: we remember the old post id for disqus
-            // We also check if amp already exists to prevent
-            // overwriting any comment ids from a 1.0 export
-            // (see https://github.com/TryGhost/Ghost/issues/8963)
-            if (model.id && !model.amp) {
-                model.amp = model.id.toString();
+            // CASE 1: you are importing old editor posts
+            // CASE 2: you are importing Koenig Beta posts
+            // CASE 3: you are importing Koenig 2.0 posts
+            if (model.mobiledoc || (model.mobiledoc && model.html && model.html.match(/^<div class="kg-card-markdown">/))) {
+                let mobiledoc;
+
+                try {
+                    mobiledoc = JSON.parse(model.mobiledoc);
+
+                    if (!mobiledoc.cards || !_.isArray(mobiledoc.cards)) {
+                        model.mobiledoc = converters.mobiledocConverter.blankStructure();
+                        mobiledoc = model.mobiledoc;
+                    }
+                } catch (err) {
+                    mobiledoc = converters.mobiledocConverter.blankStructure();
+                }
+
+                mobiledoc.cards.forEach((card) => {
+                    // Koenig Beta = imageStyle, Ghost 2.0 Koenig = cardWidth
+                    if (card[0] === 'image' && card[1].imageStyle) {
+                        card[1].cardWidth = card[1].imageStyle;
+                        delete card[1].imageStyle;
+                    }
+                });
+
+                model.mobiledoc = JSON.stringify(mobiledoc);
+                model.html = converters.mobiledocConverter.render(JSON.parse(model.mobiledoc));
             }
         });
 

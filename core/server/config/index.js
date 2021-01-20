@@ -28,7 +28,8 @@ _private.loadNconf = function loadNconf(options) {
      * env arguments
      */
     nconf.env({
-        separator: '__'
+        separator: '__',
+        parseValues: true
     });
 
     nconf.file('custom-env', path.join(customConfigPath, 'config.' + env + '.json'));
@@ -36,7 +37,9 @@ _private.loadNconf = function loadNconf(options) {
     nconf.file('defaults', path.join(baseConfigPath, 'defaults.json'));
 
     // set settings manually from azure app service
-    nconf.set('server:port', process.env.PORT);
+    if (process.env.PORT) {
+        nconf.set('server:port', process.env.PORT);
+    }
 
     /**
      * transform all relative paths to absolute paths
@@ -50,8 +53,9 @@ _private.loadNconf = function loadNconf(options) {
 
     nconf.sanitizeDatabaseProperties();
     nconf.makePathsAbsolute(nconf.get('paths'), 'paths');
-    nconf.makePathsAbsolute(nconf.get('database:connection'), 'database:connection');
-
+    if (nconf.get('database:client') === 'sqlite3') {
+        nconf.makePathsAbsolute(nconf.get('database:connection'), 'database:connection');
+    }
     /**
      * Check if the URL in config has a protocol
      */
